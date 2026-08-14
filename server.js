@@ -6,11 +6,12 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-// 배포 환경과 로컬 환경 모두 대응
+// 배포 주소 자동 감지 설정
 const origin = process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app" : "http://localhost:5173";
 app.use(cors({ origin: origin, credentials: true }));
 app.use(express.json());
 
+// ─── [ 데이터베이스: JSON 파일 관리 ] ───
 const DB_DIR = path.join(__dirname, 'db');
 if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR);
 
@@ -25,10 +26,13 @@ let assignments = readDb('assignments.json', {});
 let slideDataStore = readDb('slideDataStore.json', {});
 let userClasses = readDb('userClasses.json', {});
 
+// ─── [ 구글 OAuth2 설정: 배포 주소 강제 주입 ] ───
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app/api/auth/google/callback" : process.env.GOOGLE_REDIRECT_URI
+  process.env.NODE_ENV === 'production' 
+    ? "https://slide-theta-jet.vercel.app/api/auth/google/callback" 
+    : "http://localhost:5000/api/auth/google/callback"
 );
 
 app.get('/api/auth/google', (req, res) => {
@@ -41,11 +45,21 @@ app.get('/api/auth/google/callback', async (req, res) => {
     const { tokens } = await oauth2Client.getToken(req.query.code);
     teacherToken = tokens;
     writeDb('token.json', tokens);
-    const redirectTarget = process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app/?login=success" : "http://localhost:5173/?login=success";
+    
+    // 배포 주소면 배포된 곳으로, 로컬이면 로컬로 자동 리다이렉트
+    const redirectTarget = process.env.NODE_ENV === 'production' 
+      ? "https://slide-theta-jet.vercel.app/?login=success" 
+      : "http://localhost:5173/?login=success";
+      
     res.redirect(redirectTarget);
-  } catch (err) { res.redirect(process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app/?login=fail" : "http://localhost:5173/?login=fail"); }
+  } catch (err) { 
+    res.redirect(process.env.NODE_ENV === 'production' 
+      ? "https://slide-theta-jet.vercel.app/?login=fail" 
+      : "http://localhost:5173/?login=fail"); 
+  }
 });
 
+// ─── [ 학급 관리 API ] ───
 app.get('/api/classes', (req, res) => res.json(userClasses));
 app.post('/api/classes', (req, res) => {
   const { className, students } = req.body;
@@ -55,6 +69,7 @@ app.post('/api/classes', (req, res) => {
   res.json({ id });
 });
 
+// ─── [ 과제 생성 및 할당 API ] ───
 app.post('/api/assignment', async (req, res) => {
   const { title, templateUrl, keywords, studentList } = req.body;
   if (!teacherToken) return res.status(401).json({ error: "로그인 필요" });
@@ -62,11 +77,14 @@ app.post('/api/assignment', async (req, res) => {
     oauth2Client.setCredentials(teacherToken);
     const drive = google.drive({ version: 'v3', auth: oauth2Client });
     const templateId = templateUrl.match(/\/d\/([a-zA-Z0-9-_]+)/)?.[1];
+    
     let assignmentId;
     do { assignmentId = Math.floor(1000 + Math.random() * 9000).toString(); } while (assignments[assignmentId]);
+
     const keywordArray = keywords ? keywords.split(',').map(k => k.trim()) : [];
     assignments[assignmentId] = { assignmentId, title, templateUrl, keywords: keywordArray, createdAt: new Date() };
     writeDb('assignments.json', assignments);
+
     for (const student of studentList) {
       const copy = await drive.files.copy({ fileId: templateId, requestBody: { name: `[${student.className}_${student.name}] ${title}` } });
       await drive.permissions.create({ fileId: copy.data.id, requestBody: { role: 'writer', type: 'anyone' } });
@@ -79,6 +97,7 @@ app.post('/api/assignment', async (req, res) => {
 
 app.get('/api/dashboard/:assignmentId', async (req, res) => {
   const { assignmentId } = req.params;
+  if (!teacherToken) return res.status(401).json({ error: "로그인 필요" });
   oauth2Client.setCredentials(teacherToken);
   const slidesApi = google.slides({ version: 'v1', auth: oauth2Client });
   const keys = Object.keys(slideDataStore).filter(k => k.startsWith(assignmentId));
