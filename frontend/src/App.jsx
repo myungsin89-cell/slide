@@ -208,8 +208,17 @@ function TeacherView({ isLoggedIn, tab, userClasses, setUserClasses, activeId, t
             </div>
           ))}
           <button className="main-btn" style={{width:'100%', marginTop:'20px', justifyContent:'center'}} onClick={async () => {
-            if (!at || !au || sl.length === 0) {
-              alert("과제 제목, 템플릿 URL, 배부 대상을 모두 채워주세요.");
+            console.log("배부 시도 상태 로그:", { at, au, sl });
+            if (!at.trim()) {
+              alert("과제 제목을 입력해 주세요.");
+              return;
+            }
+            if (!au.trim()) {
+              alert("원본 슬라이드 URL을 입력해 주세요.");
+              return;
+            }
+            if (!sl || sl.length === 0) {
+              alert("배부할 대상 학생을 한 명 이상 클릭하여 선택해 주세요. (학생 목록이 보이지 않는다면 상단 '학급관리' 탭에서 학생 명단을 먼저 저장해야 합니다.)");
               return;
             }
             try {
