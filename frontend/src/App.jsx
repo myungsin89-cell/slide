@@ -17,21 +17,36 @@ function App() {
     try { const saved = localStorage.getItem('activeKeywords'); return saved ? JSON.parse(saved) : []; } catch (e) { return []; }
   });
   
-  const [userClasses, setUserClasses] = useState({});
-  const [dashboardData, setDashboardData] = useState([]);
+  // 로컬스토리지를 일차 저장소로 사용하여 무상태 Vercel 서버 지원
+  const [userClasses, setUserClasses] = useState(() => {
+    try { const saved = localStorage.getItem('userClasses'); return saved ? JSON.parse(saved) : {}; } catch (e) { return {}; }
+  });
+  const [dashboardData, setDashboardData] = useState(() => {
+    try { const saved = localStorage.getItem('slideDataStore'); return saved ? JSON.parse(saved) : []; } catch (e) { return []; }
+  });
+  
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
   useEffect(() => {
-    if (isLoggedIn) {
-      axios.get(`${API_BASE}/classes`).then(res => setUserClasses(res.data)).catch(e => console.log(e));
-      if (activeId) fetchDashboard();
-    }
-    if (window.location.search.includes('success')) {
+    // 1. 구글 로그인 완료 후 URL 쿼리 파라미터 파싱
+    const params = new URLSearchParams(window.location.search);
+    const loginStatus = params.get('login');
+    const tokenStr = params.get('token');
+    
+    if (loginStatus === 'success' && tokenStr) {
       setIsLoggedIn(true);
       localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('googleToken', tokenStr);
       setPage('teacher');
       window.history.replaceState({}, '', '/');
+    }
+  }, []);
+
+  useEffect(() => {
+    // 2. 대시보드 상태가 활성화되어 있으면 데이터 갱신 실행
+    if (isLoggedIn && activeId) {
+      fetchDashboard();
     }
   }, [isLoggedIn, activeId]);
 
@@ -45,14 +60,39 @@ function App() {
 
   const fetchDashboard = () => {
     if (!activeId) return;
-    axios.get(`${API_BASE}/dashboard/${activeId}`).then(res => {
+    const token = localStorage.getItem('googleToken');
+    const savedData = localStorage.getItem('slideDataStore');
+    let studentDataList = [];
+    try {
+      studentDataList = savedData ? JSON.parse(savedData) : dashboardData;
+    } catch(e) {
+      studentDataList = dashboardData;
+    }
+
+    if (!studentDataList || studentDataList.length === 0) return;
+
+    axios.post(`${API_BASE}/dashboard`, { 
+      studentDataList: studentDataList, 
+      keywords: targetKeywords 
+    }, {
+      headers: { Authorization: token }
+    }).then(res => {
       const newData = res.data || [];
       setDashboardData(newData);
+      localStorage.setItem('slideDataStore', JSON.stringify(newData));
       if (selectedStudent) {
         const up = newData.find(s => s.studentName === selectedStudent.studentName);
         if (up) setSelectedStudent(up);
       }
-    }).catch(e => console.log(e));
+    }).catch(e => {
+      console.log("대시보드 갱신 실패:", e);
+      if (e.response && e.response.status === 401) {
+        alert("구글 로그인 세션이 유효하지 않거나 만료되었습니다. 다시 로그인해주세요.");
+        setIsLoggedIn(false);
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('googleToken');
+      }
+    });
   };
 
   const getStatusColor = (s) => ({ "정상": "#1E8E3E", "정체": "#F9AB00", "복붙의심": "#D93025" }[s] || "#9AA0A6");
@@ -96,14 +136,34 @@ function App() {
         </div>
       </header>
       <main style={{ maxWidth: '1100px', margin: '20px auto', padding: '0 20px' }}>
-        {page === 'teacher' ? <TeacherView isLoggedIn={isLoggedIn} tab={teacherTab} userClasses={userClasses} activeId={activeId} title={title} data={dashboardData} selectedStudent={selectedStudent} setSelectedStudent={setSelectedStudent} lastUpdate={lastUpdate} fetchDashboard={fetchDashboard} targetKeywords={targetKeywords} getStatusColor={getStatusColor} /> : <StudentView />}
+        {page === 'teacher' ? (
+          <TeacherView 
+            isLoggedIn={isLoggedIn} 
+            tab={teacherTab} 
+            userClasses={userClasses} 
+            setUserClasses={setUserClasses}
+            activeId={activeId} 
+            title={title} 
+            data={dashboardData} 
+            setDashboardData={setDashboardData}
+            selectedStudent={selectedStudent} 
+            setSelectedStudent={setSelectedStudent} 
+            lastUpdate={lastUpdate} 
+            fetchDashboard={fetchDashboard} 
+            targetKeywords={targetKeywords} 
+            getStatusColor={getStatusColor} 
+            API_BASE={API_BASE}
+          />
+        ) : (
+          <StudentView API_BASE={API_BASE} />
+        )}
       </main>
       <style>{`.card { background: #fff; border: 1px solid #ddd; padding: 24px; border-radius: 12px; margin-bottom: 20px; } .nav-btn { border: none; background: none; padding: 6px 16px; cursor: pointer; color: #5F6368; border-radius: 6px; font-size: 13px; font-weight: bold; } .nav-btn.primary { background: #FFBB00; color: #fff; font-weight: bold; } .main-btn { background: #FFBB00; color: #fff; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; } .input { padding: 12px; border: 1px solid #ddd; border-radius: 6px; width: 100%; margin-bottom: 10px; box-sizing: border-box; }`}</style>
     </div>
   );
 }
 
-function TeacherView({ isLoggedIn, tab, userClasses, activeId, title, data, selectedStudent, setSelectedStudent, lastUpdate, fetchDashboard, targetKeywords, getStatusColor }) {
+function TeacherView({ isLoggedIn, tab, userClasses, setUserClasses, activeId, title, data, setDashboardData, selectedStudent, setSelectedStudent, lastUpdate, fetchDashboard, targetKeywords, getStatusColor, API_BASE }) {
   const [nc, setNc] = useState(''); const [ns, setNs] = useState('');
   const [at, setAt] = useState(''); const [au, setAu] = useState('');
   const [ak, setAk] = useState(''); const [sl, setSl] = useState([]);
@@ -115,7 +175,16 @@ function TeacherView({ isLoggedIn, tab, userClasses, activeId, title, data, sele
       <h3>{"학급 및 명단 관리"}</h3>
       <input className="input" style={{marginTop:'15px'}} placeholder="반 이름" value={nc} onChange={e => setNc(e.target.value)} />
       <textarea className="input" placeholder="학생 명단 (쉼표 구분)" value={ns} onChange={e => setNs(e.target.value)} rows="3" />
-      <button className="main-btn" onClick={async () => { await axios.post(`${API_BASE}/classes`, { className: nc, students: ns.split(',').map(v => v.trim()).filter(v => v) }); alert("저장 완료"); window.location.reload(); }}>{"저장"}</button>
+      <button className="main-btn" onClick={() => {
+        if (!nc || !ns) { alert("반 이름 and 학생 명단을 입력해 주세요."); return; }
+        const id = "class_" + Date.now();
+        const updated = { ...userClasses, [id]: { classId: id, className: nc, students: ns.split(',').map(v => v.trim()).filter(v => v) } };
+        setUserClasses(updated);
+        localStorage.setItem('userClasses', JSON.stringify(updated));
+        alert("저장 완료");
+        setNc('');
+        setNs('');
+      }}>{"저장"}</button>
       <div style={{marginTop:'30px'}}>{Object.values(userClasses).map(c => <div key={c.classId} style={{padding:'10px', borderBottom:'1px solid #eee', display:'flex', justifyContent:'space-between'}}><strong>{c.className}</strong>: {c.students.join(', ')}</div>)}</div>
     </div>
   );
@@ -139,11 +208,32 @@ function TeacherView({ isLoggedIn, tab, userClasses, activeId, title, data, sele
             </div>
           ))}
           <button className="main-btn" style={{width:'100%', marginTop:'20px', justifyContent:'center'}} onClick={async () => {
-            const res = await axios.post(`${API_BASE}/assignment`, { title: at, templateUrl: au, keywords: ak, studentList: sl });
-            localStorage.setItem('activeAssignmentId', res.data.assignmentId);
-            localStorage.setItem('activeTitle', at);
-            localStorage.setItem('activeKeywords', JSON.stringify(ak.split(',').map(k => k.trim())));
-            window.location.reload();
+            if (!at || !au || sl.length === 0) {
+              alert("과제 제목, 템플릿 URL, 배부 대상을 모두 채워주세요.");
+              return;
+            }
+            try {
+              const token = localStorage.getItem('googleToken');
+              const res = await axios.post(`${API_BASE}/assignment`, { 
+                title: at, 
+                templateUrl: au, 
+                keywords: ak, 
+                studentList: sl 
+              }, {
+                headers: { Authorization: token }
+              });
+              
+              const { assignment, studentDataList } = res.data;
+              
+              localStorage.setItem('activeAssignmentId', assignment.assignmentId);
+              localStorage.setItem('activeTitle', at);
+              localStorage.setItem('activeKeywords', JSON.stringify(assignment.keywords));
+              localStorage.setItem('slideDataStore', JSON.stringify(studentDataList));
+              
+              window.location.reload();
+            } catch(e) {
+              alert("배부 실패: " + (e.response?.data?.error || e.message));
+            }
           }}>{"배부 시작"}</button>
         </div>
       </div>
@@ -153,7 +243,20 @@ function TeacherView({ isLoggedIn, tab, userClasses, activeId, title, data, sele
       <div>
         <div className="card" style={{display:'flex', justifyContent:'space-between', alignItems:'center', borderLeft:'8px solid #FFBB00'}}>
           <div><strong>{title}</strong> <span style={{color:'#FFBB00', fontWeight:'bold'}}>{"[ 코드: "}{activeId}{" ]"}</span></div>
-          <button className="nav-btn" onClick={() => { localStorage.clear(); window.location.reload(); }} style={{color:'#D93025'}}>{"종료"}</button>
+          <div style={{display:'flex', gap:'8px'}}>
+            <button className="nav-btn" onClick={() => {
+              const linkListText = (data || []).map(s => `[${s.className} ${s.studentName}] ${s.slideUrl}`).join('\n');
+              navigator.clipboard.writeText(linkListText);
+              alert("모든 학생의 슬라이드 링크가 클립보드에 복사되었습니다!");
+            }} style={{background:'#f1f3f4'}}>{"링크 전체 복사"}</button>
+            <button className="nav-btn" onClick={() => { 
+              localStorage.removeItem('activeAssignmentId');
+              localStorage.removeItem('activeTitle');
+              localStorage.removeItem('activeKeywords');
+              localStorage.removeItem('slideDataStore');
+              window.location.reload(); 
+            }} style={{color:'#D93025'}}>{"종료"}</button>
+          </div>
         </div>
         <div className="card">
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(130px, 1fr))', gap:'15px'}}>
@@ -199,7 +302,7 @@ function TeacherView({ isLoggedIn, tab, userClasses, activeId, title, data, sele
   return null;
 }
 
-function StudentView() {
+function StudentView({ API_BASE }) {
   const [c, setC] = useState(''); const [n, setN] = useState('');
   return (
     <div className="card" style={{maxWidth:'450px', margin:'80px auto', textAlign:'center', padding:'50px'}}>
@@ -207,7 +310,7 @@ function StudentView() {
       <input className="input" style={{textAlign:'center', fontSize:'36px', fontWeight:'bold', color:'#FFBB00', letterSpacing:'10px'}} placeholder="0000" value={c} onChange={e => setC(e.target.value.replace(/[^0-9]/g, '').slice(0,4))} />
       <input className="input" style={{textAlign:'center', marginTop:'10px'}} placeholder="이름 입력" value={n} onChange={e => setN(e.target.value)} />
       <button className="main-btn" style={{width:'100%', marginTop:'20px', justifyContent:'center', fontSize:'20px'}} onClick={async () => {
-        try { const res = await axios.get(`${API_BASE}/student/access`, { params: { code: c, name: n } }); window.open(res.data.slideUrl); } catch(e) { alert("확인 실패"); }
+        try { const res = await axios.get(`${API_BASE}/student/access`, { params: { code: c, name: n } }); window.open(res.data.slideUrl); } catch(e) { alert(e.response?.data?.error || "확인 실패"); }
       }}>{"내 슬라이드 열기 🚀"}</button>
     </div>
   );
