@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Layout, RefreshCw, Monitor, AlertCircle, TrendingUp, Key, Printer, RotateCcw, Clock, User, GraduationCap, ChevronRight, CheckCircle2, FileText, Image, Activity, X } from 'lucide-react';
 
-// 배포 주소 자동 설정
-const API_BASE = window.location.hostname === 'localhost' ? "http://localhost:5000/api" : "/api";
+// 배포 주소 설정
+const PROD_URL = "https://slide-theta-jet.vercel.app";
+const API_BASE = window.location.hostname === 'localhost' ? "http://localhost:5000/api" : `${PROD_URL}/api`;
 
 function App() {
   const [page, setPage] = useState('landing'); 
@@ -60,7 +61,7 @@ function App() {
     <div style={{ backgroundColor: '#FFBB00', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'sans-serif' }}>
       <div style={{ maxWidth: '800px', width: '90%', textAlign: 'center' }}>
         <div style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '15px', display: 'inline-block', marginBottom: '20px' }}><Layout color="#FFBB00" size={48} /></div>
-        <h1 style={{ color: '#fff', fontSize: '42px', fontWeight: 'bold' }}>{"SlideSight"}</h1>
+        <h1 style={{ color: '#fff', fontSize: '42px', fontWeight: 'bold', marginBottom: '10px' }}>{"SlideSight"}</h1>
         <p style={{ color: '#fff', opacity: 0.9, marginBottom: '50px' }}>{"구글 슬라이드 기반 실시간 학습 참여 관제 시스템"}</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           <div onClick={() => setPage('teacher')} style={{ backgroundColor: '#fff', padding: '40px', borderRadius: '20px', cursor: 'pointer' }}>
@@ -68,7 +69,7 @@ function App() {
              <h2 style={{color:'#202124'}}>{"선생님용"}</h2>
           </div>
           <div onClick={() => setPage('student')} style={{ backgroundColor: '#fff', padding: '40px', borderRadius: '20px', cursor: 'pointer' }}>
-             <Activity size={48} color="#FFBB00" style={{marginBottom:'15px'}} />
+             <GraduationCap size={48} color="#FFBB00" style={{marginBottom:'15px'}} />
              <h2 style={{color:'#202124'}}>{"학생용"}</h2>
           </div>
         </div>
@@ -115,7 +116,7 @@ function TeacherView({ isLoggedIn, tab, userClasses, activeId, title, data, sele
       <input className="input" style={{marginTop:'15px'}} placeholder="반 이름" value={nc} onChange={e => setNc(e.target.value)} />
       <textarea className="input" placeholder="학생 명단 (쉼표 구분)" value={ns} onChange={e => setNs(e.target.value)} rows="3" />
       <button className="main-btn" onClick={async () => { await axios.post(`${API_BASE}/classes`, { className: nc, students: ns.split(',').map(v => v.trim()).filter(v => v) }); alert("저장 완료"); window.location.reload(); }}>{"저장"}</button>
-      <div style={{marginTop:'30px'}}>{Object.values(userClasses).map(c => <div key={c.classId} style={{padding:'10px', borderBottom:'1px solid #eee'}}><strong>{c.className}</strong>: {c.students.join(', ')}</div>)}</div>
+      <div style={{marginTop:'30px'}}>{Object.values(userClasses).map(c => <div key={c.classId} style={{padding:'10px', borderBottom:'1px solid #eee', display:'flex', justifyContent:'space-between'}}><strong>{c.className}</strong>: {c.students.join(', ')}</div>)}</div>
     </div>
   );
 
@@ -148,43 +149,35 @@ function TeacherView({ isLoggedIn, tab, userClasses, activeId, title, data, sele
       </div>
     );
 
-    const urgent = (data || []).filter(s => s.status === '정체' || s.status === '복붙의심');
-
     return (
       <div>
-        <div className="card" style={{display:'flex', gap:'25px', fontSize:'13px', borderLeft:'10px solid #FFBB00'}}>
-          <div style={{display:'flex', alignItems:'center', gap:'6px'}}><div style={{width:10, height:10, borderRadius:'50%', background:'#1E8E3E'}}></div>정상</div>
-          <div style={{display:'flex', alignItems:'center', gap:'6px'}}><div style={{width:10, height:10, borderRadius:'50%', background:'#F9AB00'}}></div>정체</div>
-          <div style={{display:'flex', alignItems:'center', gap:'6px'}}><div style={{width:10, height:10, borderRadius:'50%', background:'#D93025'}}></div>복붙</div>
-          <div style={{marginLeft:'auto', color:'#666'}}><Clock size={14} style={{verticalAlign:'middle'}}/> {"자동갱신 중: "}{lastUpdate.toLocaleTimeString()}</div>
+        <div className="card" style={{display:'flex', justifyContent:'space-between', alignItems:'center', borderLeft:'8px solid #FFBB00'}}>
+          <div><strong>{title}</strong> <span style={{color:'#FFBB00', fontWeight:'bold'}}>{"[ 코드: "}{activeId}{" ]"}</span></div>
+          <button className="nav-btn" onClick={() => { localStorage.clear(); window.location.reload(); }} style={{color:'#D93025'}}>{"종료"}</button>
         </div>
-
         <div className="card">
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(130px, 1fr))', gap:'15px'}}>
             {(data || []).map(s => (
-              <div key={s.studentName} onClick={() => setSelectedStudent(s)} style={{padding:'20px', borderRadius:'15px', background: getStatusColor(s.status), color: s.status === '미시작' ? '#5f6368' : '#fff', textAlign:'center', cursor:'pointer', border: selectedStudent?.studentName === s.studentName ? '5px solid #202124' : 'none', transition:'all 0.2s'}}>
+              <div key={s.studentName} onClick={() => setSelectedStudent(s)} style={{padding:'20px', borderRadius:'12px', background: getStatusColor(s.status), color: s.status === '미시작' ? '#5f6368' : '#fff', textAlign:'center', cursor:'pointer', border: selectedStudent?.studentName === s.studentName ? '5px solid #202124' : 'none'}}>
                 <div style={{fontWeight:'bold', fontSize:'18px'}}>{s.studentName}</div>
-                <div style={{fontSize:'11px', opacity: 0.9}}>{s.wordCount}{"자 작성"}</div>
+                <div style={{fontSize:'11px'}}>{s.wordCount}{"자"}</div>
               </div>
             ))}
           </div>
         </div>
-
         {selectedStudent && (
           <div className="card" style={{borderTop:`15px solid ${getStatusColor(selectedStudent.status)}`, padding:'40px'}}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: '35px'}}>
-              <div><h2 style={{fontSize:'32px'}}>{selectedStudent.studentName}</h2><div style={{display:'flex', alignItems:'center', gap:'10px', marginTop:'10px'}}><Activity size={20} color={getStatusColor(selectedStudent.status)}/> <strong>{selectedStudent.activityLog}</strong></div></div>
-              <button className="main-btn" onClick={() => window.open(selectedStudent.slideUrl)}>{"슬라이드 열기 ➜"}</button>
-            </div>
-            <div className="grid" style={{gridTemplateColumns:'repeat(4, 1fr)', gap:'20px', marginBottom:'40px'}}>
+            <h2>{selectedStudent.studentName}{" 상세분석"}</h2>
+            <div className="grid" style={{gridTemplateColumns:'repeat(4, 1fr)', gap:'20px', marginTop:'20px'}}>
               <div style={{background:'#F8F9FA', padding:'20px', borderRadius:'12px', textAlign:'center'}}><div>{"분량"}</div><strong>{selectedStudent.wordCount}{"자"}</strong></div>
               <div style={{background:'#F8F9FA', padding:'20px', borderRadius:'12px', textAlign:'center'}}><div>{"장수"}</div><strong>{selectedStudent.slideCount}{"장"}</strong></div>
-              <div style={{background:'#F8F9FA', padding:'20px', borderRadius:'12px', textAlign:'center'}}><div>{"이미지"}</div><strong>{selectedStudent.imageCount + selectedStudent.shapeCount}{"개"}</strong></div>
+              <div style={{background:'#F8F9FA', padding:'20px', borderRadius:'12px', textAlign:'center'}}><div>{"이미지"}</div><strong>{selectedStudent.imageCount}{"개"}</strong></div>
               <div style={{background:'#F8F9FA', padding:'20px', borderRadius:'12px', textAlign:'center'}}><div>{"핵심어"}</div><strong>{selectedStudent.foundKeywords.length}{"/"}{targetKeywords.length}</strong></div>
             </div>
-            <div style={{height:'120px', display:'flex', alignItems:'flex-end', gap:'3px', background:'#f1f3f4', padding:'15px', borderRadius:'12px'}}>
+            <div style={{height:'120px', display:'flex', alignItems:'flex-end', gap:'3px', background:'#f1f3f4', padding:'15px', borderRadius:'12px', marginTop:'20px'}}>
                {selectedStudent.history?.map((h, i, arr) => <div key={i} style={{flex:1, background: h.wordCount > (arr[i-1]?.wordCount || 0) ? '#FFBB00' : '#cbd5e1', height:`${Math.max(10, (h.wordCount/(selectedStudent.wordCount || 100))*100)}%`, borderRadius:'2px'}}></div>)}
             </div>
+            <button className="main-btn" style={{width:'100%', marginTop:'20px'}} onClick={() => window.open(selectedStudent.slideUrl)}>{"슬라이드 열기 ➜"}</button>
           </div>
         )}
       </div>
@@ -194,9 +187,12 @@ function TeacherView({ isLoggedIn, tab, userClasses, activeId, title, data, sele
   if (tab === 'report') return (
     <div className="card">
        <h2>{"종합 리포트"}</h2>
-       <div style={{display:'flex', flexDirection:'column', gap:'15px', marginTop:'25px'}}>
-          {(data || []).map(s => <div key={s.studentName} style={{padding:'20px', borderLeft:`8px solid ${getStatusColor(s.status)}`, background:'#F8F9FA', borderRadius:'12px', display:'flex', justifyContent:'space-between'}}><strong>{s.studentName}</strong> <span>{s.wordCount}{"자 / "}{s.slideCount}{"장 / 이미지 "}{s.imageCount}{"개"}</span></div>)}
-       </div>
+       {data.map(s => (
+         <div key={s.studentName} style={{padding:'15px', borderBottom:'1px solid #eee', display:'flex', justifyContent:'space-between'}}>
+           <strong>{s.studentName}</strong>
+           <span>{s.wordCount}{"자 / "}{s.slideCount}{"장 / 이미지 "}{s.imageCount}{"개"}</span>
+         </div>
+       ))}
        <button className="main-btn" style={{marginTop:'30px'}} onClick={() => window.print()}>{"인쇄하기"}</button>
     </div>
   );
@@ -210,7 +206,7 @@ function StudentView() {
       <h2 style={{fontSize:'28px', marginBottom:'40px'}}>{"학생 접속"}</h2>
       <input className="input" style={{textAlign:'center', fontSize:'36px', fontWeight:'bold', color:'#FFBB00', letterSpacing:'10px'}} placeholder="0000" value={c} onChange={e => setC(e.target.value.replace(/[^0-9]/g, '').slice(0,4))} />
       <input className="input" style={{textAlign:'center', marginTop:'10px'}} placeholder="이름 입력" value={n} onChange={e => setN(e.target.value)} />
-      <button className="main-btn" style={{width:'100%', marginTop:'20px'}} onClick={async () => {
+      <button className="main-btn" style={{width:'100%', marginTop:'20px', justifyContent:'center', fontSize:'20px'}} onClick={async () => {
         try { const res = await axios.get(`${API_BASE}/student/access`, { params: { code: c, name: n } }); window.open(res.data.slideUrl); } catch(e) { alert("확인 실패"); }
       }}>{"내 슬라이드 열기 🚀"}</button>
     </div>

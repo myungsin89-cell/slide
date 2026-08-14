@@ -6,8 +6,11 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-// 배포 주소 자동 감지 설정
-const origin = process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app" : "http://localhost:5173";
+
+// 배포 주소 강제 설정
+const PROD_URL = "https://slide-theta-jet.vercel.app";
+const origin = process.env.NODE_ENV === 'production' ? PROD_URL : "http://localhost:5173";
+
 app.use(cors({ origin: origin, credentials: true }));
 app.use(express.json());
 
@@ -26,17 +29,21 @@ let assignments = readDb('assignments.json', {});
 let slideDataStore = readDb('slideDataStore.json', {});
 let userClasses = readDb('userClasses.json', {});
 
-// ─── [ 구글 OAuth2 설정: 배포 주소 강제 주입 ] ───
+// ─── [ 구글 OAuth2 설정: 알려주신 주소로 강제 지정 ] ───
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
   process.env.NODE_ENV === 'production' 
-    ? "https://slide-theta-jet.vercel.app/api/auth/google/callback" 
+    ? `${PROD_URL}/api/auth/google/callback` 
     : "http://localhost:5000/api/auth/google/callback"
 );
 
 app.get('/api/auth/google', (req, res) => {
-  const url = oauth2Client.generateAuthUrl({ access_type: 'offline', scope: ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/presentations'], prompt: 'consent' });
+  const url = oauth2Client.generateAuthUrl({ 
+    access_type: 'offline', 
+    scope: ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/presentations'], 
+    prompt: 'consent' 
+  });
   res.redirect(url);
 });
 
@@ -46,15 +53,14 @@ app.get('/api/auth/google/callback', async (req, res) => {
     teacherToken = tokens;
     writeDb('token.json', tokens);
     
-    // 배포 주소면 배포된 곳으로, 로컬이면 로컬로 자동 리다이렉트
     const redirectTarget = process.env.NODE_ENV === 'production' 
-      ? "https://slide-theta-jet.vercel.app/?login=success" 
+      ? `${PROD_URL}/?login=success` 
       : "http://localhost:5173/?login=success";
       
     res.redirect(redirectTarget);
   } catch (err) { 
     res.redirect(process.env.NODE_ENV === 'production' 
-      ? "https://slide-theta-jet.vercel.app/?login=fail" 
+      ? `${PROD_URL}/?login=fail` 
       : "http://localhost:5173/?login=fail"); 
   }
 });
@@ -116,7 +122,8 @@ app.get('/api/dashboard/:assignmentId', async (req, res) => {
           }
         });
       });
-      const fk = (assignments[assignmentId]?.keywords || []).filter(kw => txt.includes(kw));
+      const targetKeywords = assignments[assignmentId]?.keywords || [];
+      const fk = targetKeywords.filter(kw => txt.includes(kw));
       let status = "정상", log = "진행 중";
       const prevW = s.wordCount || 0;
       if (w === 0) { status = "미시작"; log = "대기"; }
