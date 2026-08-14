@@ -6,7 +6,9 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+// 배포 환경과 로컬 환경 모두 대응
+const origin = process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app" : "http://localhost:5173";
+app.use(cors({ origin: origin, credentials: true }));
 app.use(express.json());
 
 const DB_DIR = path.join(__dirname, 'db');
@@ -23,7 +25,11 @@ let assignments = readDb('assignments.json', {});
 let slideDataStore = readDb('slideDataStore.json', {});
 let userClasses = readDb('userClasses.json', {});
 
-const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REDIRECT_URI);
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app/api/auth/google/callback" : process.env.GOOGLE_REDIRECT_URI
+);
 
 app.get('/api/auth/google', (req, res) => {
   const url = oauth2Client.generateAuthUrl({ access_type: 'offline', scope: ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/presentations'], prompt: 'consent' });
@@ -35,8 +41,9 @@ app.get('/api/auth/google/callback', async (req, res) => {
     const { tokens } = await oauth2Client.getToken(req.query.code);
     teacherToken = tokens;
     writeDb('token.json', tokens);
-    res.redirect('http://localhost:5173/?login=success');
-  } catch (err) { res.redirect('http://localhost:5173/?login=fail'); }
+    const redirectTarget = process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app/?login=success" : "http://localhost:5173/?login=success";
+    res.redirect(redirectTarget);
+  } catch (err) { res.redirect(process.env.NODE_ENV === 'production' ? "https://slide-theta-jet.vercel.app/?login=fail" : "http://localhost:5173/?login=fail"); }
 });
 
 app.get('/api/classes', (req, res) => res.json(userClasses));
@@ -55,14 +62,11 @@ app.post('/api/assignment', async (req, res) => {
     oauth2Client.setCredentials(teacherToken);
     const drive = google.drive({ version: 'v3', auth: oauth2Client });
     const templateId = templateUrl.match(/\/d\/([a-zA-Z0-9-_]+)/)?.[1];
-    
     let assignmentId;
     do { assignmentId = Math.floor(1000 + Math.random() * 9000).toString(); } while (assignments[assignmentId]);
-
     const keywordArray = keywords ? keywords.split(',').map(k => k.trim()) : [];
     assignments[assignmentId] = { assignmentId, title, templateUrl, keywords: keywordArray, createdAt: new Date() };
     writeDb('assignments.json', assignments);
-
     for (const student of studentList) {
       const copy = await drive.files.copy({ fileId: templateId, requestBody: { name: `[${student.className}_${student.name}] ${title}` } });
       await drive.permissions.create({ fileId: copy.data.id, requestBody: { role: 'writer', type: 'anyone' } });
@@ -114,4 +118,5 @@ app.get('/api/student/access', (req, res) => {
   else res.status(404).json({ error: "찾을 수 없음" });
 });
 
-app.listen(5000, () => console.log("Server running on port 5000"));
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
